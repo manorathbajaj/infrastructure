@@ -21,19 +21,23 @@ Parameters:
   ec2Size:
     Description: Provided EC2 instance size
     Type: String
-    Default: TBD
+    Default: t2.micro
   rdsSize:
     Description: Provided RDS instance size
     Type: String
-    Default: TBD
+    Default: db.t3.micro
   rdsPublicAccess:
     Description: Provided RDS accesibility
-    Type: Boolean
+    Type: String
     Default: false
   amiId:
     Description: Ami id provided
     Type: String
-    Default: TBD
+    Default: ami-0095bf27c1d96c053
+  sshKey:
+    Description: SSH key provided to attach to EC2 instance.
+    Type: String
+    Default: amazon_id_rsa
 # Resources block
 Resources:
   myVpc:
@@ -77,6 +81,13 @@ Resources:
       Tags:
         - Key: Name
           Value: !Join ["-",[!Ref vpcName,!Ref awsRegion,subnet3]]
+  dbsubnet:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: ye le bhai
+      SubnetIds:
+        - !Ref subnet3
+        - !Ref subnet2 
   # Internet Gateway
   internetGateway:
     Type: AWS::EC2::InternetGateway
@@ -137,13 +148,13 @@ Resources:
         FromPort: 8080
         ToPort: 8080
         CidrIp: 0.0.0.0/0
-      - IpProtocol: ssh
+      - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
         CidrIp: 0.0.0.0/0
-    Tags:
-      - Key: Name
-        Value: application-security-group
+      Tags:
+        - Key: Name
+          Value: application-security-group
   # Database Security Group
   databaseSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -151,20 +162,16 @@ Resources:
       VpcId: !Ref myVpc
       GroupDescription: Security group allowing ingress for database access to the application..
       GroupName: databaseSecurityGroup
-  # inbound rule connecting application to database
-  inboundRule:  
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      IpProtocol: tcp
-      FromPort: 3306
-      ToPort: 3306
-      SourceSecurityGroupName: applicationSecurityGroup
-      GroupName: databaseSecurityGroup
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        SourceSecurityGroupId: !Ref applicationSecurityGroup
   # S3 Bucket
   s3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: private
+      AccessControl: Private
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -180,48 +187,74 @@ Resources:
         - Key: Name
           Value: !Join ["-",[!Ref vpcName,!Ref awsRegion,s3-bucket]]
   # IAM Policy
-  iamPolicy:
-    Type: 'AWS::IAM::Policy'
+  RootRole:
+    Type: 'AWS::IAM::Role'
     Properties:
-      PolicyName: WebAppS3
-      PolicyDocument:
+      AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
-            Action: !Join [":", [s3,!Ref s3Bucket]]
-            Resource:
-              - !Join ["",[arn:aws:s3:::,!Ref s3Bucket]]
-                !Join ["",[arn:aws:s3:::,!Ref s3Bucket,/*]]
-  # IAM Role
-  iamRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      AssumeRolePolicyDocument: Json
-      Description: Role for EC2 instance to access S3 bucket
-      Policies: !Ref iamPolicy
-      RoleName: EC2-CSYE6225
-      Tags: 
-        - Key: Name
-        Value: ec2-iam-role          
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: !Join [":", [s3,!Ref s3Bucket]]
+                Resource: '*'
+  RootInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref RootRole          
   # RDS Instance
   rdsInstance:
     Type: AWS::RDS::DBInstance
     Properties:
+      AllocatedStorage: 10
       Engine: MySQL
-      DBInstanceClass: db.t3.micro
+      DBInstanceClass: !Ref rdsSize
       MultiAZ: false
       DBInstanceIdentifier: csye6225-spring2020
       MasterUsername: dbuser
       MasterUserPassword: Manorath96!
-      DBSubnetGroupName: !Ref subnet3
+      DBSubnetGroupName: !Ref dbsubnet
       PubliclyAccessible: false
       DBName: csye6225
-      VPCSecurityGroups: !Ref databaseSecurityGroup
+      VPCSecurityGroups: 
+        - !Ref databaseSecurityGroup
+    DependsOn: dbsubnet
   # EC2 Instance
   ec2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: !Ref ec2Size
       ImageId: !Ref amiId
-      
-
+      KeyName: !Ref sshKey
+      UserData:
+        Fn::Base64:                                # YAML makes userdata much cleaner
+          !Sub |
+              #!/bin/bash -ex
+              export 
+      DisableApiTermination: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs: 
+            VolumeSize: 20 
+            VolumeType: gp2
+            DeleteOnTermination: true
+      IamInstanceProfile: !Ref RootInstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
+            - !Ref applicationSecurityGroup
+          SubnetId: !Ref subnet3
+    DependsOn: rdsInstance
