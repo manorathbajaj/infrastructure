@@ -38,6 +38,18 @@ Parameters:
     Description: SSH key provided to attach to EC2 instance.
     Type: String
     Default: amazon_id_rsa
+  port:
+    Description: Provided host to connect with database
+    Type: String
+    Default: 3306
+  dbUserName:
+    Description: Provided database username
+    Type: String
+    Default: dbuser
+  dbPassword:
+    Description: Provided daabase password
+    Type: String
+    Default: Manorath96!
 # Resources block
 Resources:
   myVpc:
@@ -190,6 +202,7 @@ Resources:
   RootRole:
     Type: 'AWS::IAM::Role'
     Properties:
+      RoleName: EC2-CSYE6225
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -201,13 +214,21 @@ Resources:
               - 'sts:AssumeRole'
       Path: /
       Policies:
-        - PolicyName: root
+        - PolicyName: WebAppS3
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
-                Action: !Join [":", [s3,!Ref s3Bucket]]
-                Resource: '*'
+                Action: 
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:PutObject
+                Resource:
+                  Fn::Join:
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - "Ref" : "s3Bucket"
+                    - "/*"
   RootInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
@@ -223,8 +244,8 @@ Resources:
       DBInstanceClass: !Ref rdsSize
       MultiAZ: false
       DBInstanceIdentifier: csye6225-spring2020
-      MasterUsername: dbuser
-      MasterUserPassword: Manorath96!
+      MasterUsername: !Ref dbUserName
+      MasterUserPassword: !Ref dbPassword
       DBSubnetGroupName: !Ref dbsubnet
       PubliclyAccessible: false
       DBName: csye6225
@@ -238,11 +259,44 @@ Resources:
       InstanceType: !Ref ec2Size
       ImageId: !Ref amiId
       KeyName: !Ref sshKey
-      UserData:
-        Fn::Base64:                                # YAML makes userdata much cleaner
-          !Sub |
-              #!/bin/bash -ex
-              export 
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash 
+            - |
+              set -e -x  
+            - !Sub |
+              sudo echo name=${dbUserName} >> /etc/profile.d/envvariable.sh 
+            - |
+              sudo echo export name >> /etc/profile.d/envvariable.sh 
+            - !Sub >
+              sudo echo password=${dbPassword} >>
+              /etc/profile.d/envvariable.sh 
+            - |
+              sudo echo export password >> /etc/profile.d/envvariable.sh 
+            - !Join 
+              - ''
+              - - 'echo host='
+                - !GetAtt 
+                  - rdsInstance
+                  - Endpoint.Address
+                - |
+                  >> /etc/profile.d/envvariable.sh
+            - |
+              sudo echo export host >> /etc/profile.d/envvariable.sh      
+            - !Join 
+              - ''
+              - - sudo echo bucketName=
+                - !Ref s3Bucket
+                - |
+                  >> /etc/profile.d/envvariable.sh  
+            - |
+              sudo echo export bucketName >> /etc/profile.d/envvariable.sh
+            - !Sub |
+              sudo echo port=${port} >> /etc/profile.d/envvariable.sh
+            - |
+              sudo echo export port >> /etc/profile.d/envvariable.sh          
       DisableApiTermination: false
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
