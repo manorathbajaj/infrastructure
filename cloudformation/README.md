@@ -1,9 +1,8 @@
-# shell script usage.
+# Creating a stack using application.yml
 
 ## Create Stack (create-stack.sh)
-<code>sh create-stack.sh stack-name awsregion cidr-block subnet-cidr-block vpc-name aws-profile </code> <br>
-Wait for "stack created" to print
+<code>aws cloudformation create-stack --stack-name testApplication --template-body file://./application.yml --profile dev --capabilities CAPABILITY_NAMED_IAM </code> <br>
 
-## Delete Stack (delete-stack.sh)
-<code>sh delete-stack.sh stack-name awa-profile</code><br>
-Wait for "stack deleted" to print
+this will use default values for variables in the YML file. they can be overridden by passing in variables with  <code>--parameters variable=variableValue<code> <br>
+
+this will create a stack with name <b> testApplication</b> on <b>dev</b> profile
