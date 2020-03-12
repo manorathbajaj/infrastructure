@@ -313,7 +313,7 @@ Resources:
             VolumeSize: 20 
             VolumeType: gp2
             DeleteOnTermination: true
-      IamInstanceProfile: !Ref RootInstanceProfile
+      IamInstanceProfile: !Ref ec2instanceprofile
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
