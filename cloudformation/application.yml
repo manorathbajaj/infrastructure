@@ -33,7 +33,7 @@ Parameters:
   amiId:
     Description: Ami id provided
     Type: String
-    Default: ami-0095bf27c1d96c053
+    Default: ami-07c1afe641c95f197
   sshKey:
     Description: SSH key provided to attach to EC2 instance.
     Type: String
@@ -313,7 +313,7 @@ Resources:
             VolumeSize: 20 
             VolumeType: gp2
             DeleteOnTermination: true
-      IamInstanceProfile: !Ref RootInstanceProfile
+      IamInstanceProfile: !Ref ec2instanceprofile
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
