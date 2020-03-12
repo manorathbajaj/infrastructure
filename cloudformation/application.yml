@@ -37,7 +37,7 @@ Parameters:
   sshKey:
     Description: SSH key provided to attach to EC2 instance.
     Type: String
-    Default: ami-00de99f3393ced8db
+    Default: amazon_id_rsa
   port:
     Description: Provided host to connect with database
     Type: String
