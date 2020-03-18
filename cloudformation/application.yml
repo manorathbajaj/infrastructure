@@ -33,7 +33,7 @@ Parameters:
   amiId:
     Description: Ami id provided
     Type: String
-    Default: ami-0095bf27c1d96c053
+    Default: ami-07c1afe641c95f197
   sshKey:
     Description: SSH key provided to attach to EC2 instance.
     Type: String
@@ -450,6 +450,8 @@ Resources:
       ManagedPolicyArns:
         - !Ref CodeDeployEC2S3
         - !Ref AccessAttachmentToS3Bucket
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
