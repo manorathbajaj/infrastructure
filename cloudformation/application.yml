@@ -56,6 +56,12 @@ Parameters:
   deploybucket:
     Type: String
     Default: codedeploy-prod.manorathbajaj.me
+  domainName:
+    Type: String
+    Default: prod.manorathbajaj.me.
+  certificateARN:
+    Type: String
+    Default: arn:aws:acm:us-east-1:612522715040:certificate/436890b8-5cc9-4be2-b7a6-8a769e3a9c96
 # Resources block
 Resources:
   myVpc:
@@ -244,6 +250,7 @@ Resources:
   # RDS Instance
   rdsInstance:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
     Properties:
       AllocatedStorage: 10
       Engine: MySQL
@@ -256,14 +263,89 @@ Resources:
       PubliclyAccessible: false
       DBName: csye6225
       VPCSecurityGroups: 
-        - !Ref databaseSecurityGroup
+        - !Ref dbsecuritygroup
     DependsOn: dbsubnet
-  # EC2 Instance
-  ec2Instance:
-    Type: AWS::EC2::Instance
+  # # EC2 Instance
+  # ec2Instance:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     InstanceType: !Ref ec2Size
+  #     ImageId: !Ref amiId
+  #     KeyName: !Ref sshKey
+  #     UserData: !Base64 
+  #       'Fn::Join':
+  #         - ''
+  #         - - |
+  #             #!/bin/bash 
+  #           - |
+  #             set -e -x  
+  #           - !Sub |
+  #             sudo echo name=${dbUserName} >> /etc/profile.d/envvariable.sh 
+  #           - |
+  #             sudo echo export name >> /etc/profile.d/envvariable.sh 
+  #           - !Sub >
+  #             sudo echo password=${dbPassword} >>
+  #             /etc/profile.d/envvariable.sh 
+  #           - |
+  #             sudo echo export password >> /etc/profile.d/envvariable.sh 
+  #           - !Join 
+  #             - ''
+  #             - - 'echo host='
+  #               - !GetAtt 
+  #                 - rdsInstance
+  #                 - Endpoint.Address
+  #               - |
+  #                 >> /etc/profile.d/envvariable.sh
+  #           - |
+  #             sudo echo export host >> /etc/profile.d/envvariable.sh      
+  #           - !Join 
+  #             - ''
+  #             - - sudo echo bucketName=
+  #               - !Ref s3Bucket
+  #               - |
+  #                 >> /etc/profile.d/envvariable.sh  
+  #           - |
+  #             sudo echo export bucketName >> /etc/profile.d/envvariable.sh
+  #           - !Sub |
+  #             sudo echo port=${port} >> /etc/profile.d/envvariable.sh
+  #           - |
+  #             sudo echo export port >> /etc/profile.d/envvariable.sh          
+  #     Tags:
+  #       - Key: Name
+  #         Value: EC2-CODEDEPLOY
+  #     DisableApiTermination: false
+  #     BlockDeviceMappings:
+  #       - DeviceName: /dev/sda1
+  #         Ebs: 
+  #           VolumeSize: 20 
+  #           VolumeType: gp2
+  #           DeleteOnTermination: true
+  #     IamInstanceProfile: !Ref ec2instanceprofile
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: true
+  #         DeviceIndex: 0
+  #         GroupSet: 
+  #           - !Ref applicationSecurityGroup
+  #         SubnetId: !Ref subnet3
+  #   DependsOn: rdsInstance
+## Launch Configuration
+  launchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
+      LaunchConfigurationName: asg_launch_config
       InstanceType: !Ref ec2Size
+      PlacementTenancy: default
       ImageId: !Ref amiId
+      IamInstanceProfile: !Ref ec2instanceprofile
+      SecurityGroups:
+        - !Ref webappsecuritygroup
+      AssociatePublicIpAddress: true
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: '20'
+            VolumeType: gp2
+            DeleteOnTermination: true
       KeyName: !Ref sshKey
       UserData: !Base64 
         'Fn::Join':
@@ -302,25 +384,215 @@ Resources:
             - !Sub |
               sudo echo port=${port} >> /etc/profile.d/envvariable.sh
             - |
-              sudo echo export port >> /etc/profile.d/envvariable.sh          
+              sudo echo export port >> /etc/profile.d/envvariable.sh
+## Auto Scaling group
+  WebServerGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      AutoScalingGroupName: AutoScalingGroup
+      Cooldown: '60'
+      DesiredCapacity: 2
+      LaunchConfigurationName: !Ref launchConfig
+      VPCZoneIdentifier:
+        - !Ref subnet1
+        - !Ref subnet2 
+      MaxSize: 5
+      MinSize: 2
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
       Tags:
         - Key: Name
           Value: EC2-CODEDEPLOY
-      DisableApiTermination: false
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs: 
-            VolumeSize: 20 
-            VolumeType: gp2
-            DeleteOnTermination: true
-      IamInstanceProfile: !Ref ec2instanceprofile
-      NetworkInterfaces:
-        - AssociatePublicIpAddress: true
-          DeviceIndex: 0
-          GroupSet: 
-            - !Ref applicationSecurityGroup
-          SubnetId: !Ref subnet3
-    DependsOn: rdsInstance
+          PropagateAtLaunch: true
+## listners
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref appLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+## Scale Policy
+  WebServerScaleUpPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebServerGroup
+      Cooldown: '60'
+      ScalingAdjustment: '1'
+  WebServerScaleDownPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebServerGroup
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+  CPUAlarmHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up if CPU > 5% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      AlarmActions:
+        - !Ref WebServerScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref WebServerGroup
+      ComparisonOperator: GreaterThanThreshold
+  CPUAlarmLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down if CPU < 3% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      AlarmActions:
+        - !Ref WebServerScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref WebServerGroup
+      ComparisonOperator: LessThanThreshold
+## Load Balancer
+  appLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: LoadBalancer
+      Subnets:
+        - !Ref subnet1 
+        - !Ref subnet2
+      SecurityGroups:
+        - !Ref loadbalancersecuritygroup
+      IpAddressType: ipv4
+      Tags:
+        - Key: NAME
+          Value: EC2LOADBALANCER
+##  Security Groups
+
+  webappsecuritygroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref myVpc
+      GroupDescription: Security group for web server
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !GetAtt 
+            - loadbalancersecuritygroup
+            - GroupId
+  loadbalancersecuritygroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: LoadBalancer-Security-Group
+      GroupDescription: Enable HTTPS via port 8080
+      VpcId: !Ref myVpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+  dbsecuritygroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref myVpc
+      GroupDescription: Ec2 security group for DB
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref webappsecuritygroup
+          FromPort: 3306
+          IpProtocol: tcp
+          ToPort: 3306
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: '8080'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 7
+      HealthyThresholdCount: 3
+      Name: TargetGroup
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref myVpc
+      Matcher:
+        HttpCode: '401,200'
+  DNSRecord:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Properties:
+      HostedZoneName: !Ref domainName
+      RecordSets:
+        - Name: !Ref domainName
+          Type: A
+          AliasTarget:
+            DNSName: !GetAtt 
+              - appLoadBalancer
+              - DNSName
+            HostedZoneId: !GetAtt 
+              - appLoadBalancer
+              - CanonicalHostedZoneID
+## Codedeploy 
+  codedeployapplication:
+    Type: 'AWS::CodeDeploy::Application'
+    Properties:
+      ApplicationName: csye6225-webapp
+  Deploymentgroup:
+    Type: 'AWS::CodeDeploy::DeploymentGroup'
+    Properties:
+      ApplicationName: !Ref codedeployapplication
+      DeploymentGroupName: csye6225-webapp-deployment
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      AutoScalingGroups:
+        - !Ref server
+      LoadBalancerInfo:
+        TargetGroupInfoList:
+          - Name: !GetAtt 
+              - ALBTargetGroup
+              - TargetGroupName
+      AutoRollbackConfiguration:
+        Enabled: 'True'
+        Events:
+          - DEPLOYMENT_FAILURE
+      ServiceRoleArn: !Join 
+        - ''
+        - - 'arn:aws:iam::'
+          - !Ref Accountno
+          - ':role/CodeDeployServiceRole'
+      DeploymentStyle:
+        DeploymentType: IN_PLACE
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      Ec2TagFilters:
+        - Key: Name
+          Type: KEY_AND_VALUE
+          Value: EC2-CODEDEPLOY
+
   circleciec2ami:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
