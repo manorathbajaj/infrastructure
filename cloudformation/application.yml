@@ -797,7 +797,7 @@ Resources:
         - Key: Name
           Type: KEY_AND_VALUE
           Value: EC2-CODEDEPLOY
-########## SNS 
+########## Lambda
   lambdaexecutionrole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -832,4 +832,58 @@ Resources:
               - 'logs:PutLogEvents'
             Effect: Allow
             Resource: 'arn:aws:logs:*:*:*'
+######
+  snsTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: email_due_patients
+      Subscription:
+        - Endpoint: !GetAtt 
+            - lambdafunction
+            - Arn
+          Protocol: lambda
+
+  lambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: SendEmailOnSNS
+      MemorySize: 512
+      Environment:
+        Variables:
+          fromaddr: !Ref fromaddress
+      Code:
+        S3Bucket: !Ref codedeploybucket
+        S3Key: Lambda-0.0.1-SNAPSHOT.jar
+      Role: !GetAtt 
+        - lambdaexecutionrole
+        - Arn
+      Timeout: 90
+      Handler: 'csye6225.lambda.LogEvent::handleRequest'
+      Runtime: java11
+  dynamoTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 10
+        WriteCapacityUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: 'TRUE'
+      TableName: csye6225
+  lambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:*'
+      FunctionName: !GetAtt 
+        - lambdafunction
+        - Arn
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref snsTopic
+
  
