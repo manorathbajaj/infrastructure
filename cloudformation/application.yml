@@ -385,6 +385,10 @@ Resources:
               sudo echo port=${port} >> /etc/profile.d/envvariable.sh
             - |
               sudo echo export port >> /etc/profile.d/envvariable.sh
+            - !Sub |
+              sudo echo domainName=${domainName} >> /etc/profile.d/envvariable.sh
+            - |
+              sudo echo export domainName >> /etc/profile.d/envvariable.sh  
 ## Auto Scaling group
   WebServerGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -723,6 +727,9 @@ Resources:
         - !Ref CodeDeployEC2S3
         - !Ref AccessAttachmentToS3Bucket
         - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -817,55 +824,40 @@ Resources:
         - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
         - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
-  lambadaLoggingPolicies:
-    Type: 'AWS::IAM::Policy'
-    Properties:
-      PolicyName: LambdaLogsPolicy
-      Roles:
-        - !Ref lambdaexecutionrole
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
-            Effect: Allow
-            Resource: 'arn:aws:logs:*:*:*'
-######
+        - 'arn:aws:iam::aws:policy/AmazonSQSFullAccess'
+#####  Lambda 
   snsTopic:
     Type: 'AWS::SNS::Topic'
     Properties:
       TopicName: email_due_patients
       Subscription:
         - Endpoint: !GetAtt 
-            - lambdafunction
+            - lambdaFunction
             - Arn
           Protocol: lambda
-
   lambdaFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: SendEmailOnSNS
       MemorySize: 512
-      Environment:
-        Variables:
-          fromaddr: !Ref fromaddress
-      Code:
-        S3Bucket: !Ref codedeploybucket
-        S3Key: Lambda-0.0.1-SNAPSHOT.jar
+      Code: 
+        S3Bucket: !Ref deploybucket
+        S3Key: serverless-1.0-SNAPSHOT.zip
       Role: !GetAtt 
         - lambdaexecutionrole
         - Arn
       Timeout: 90
-      Handler: 'csye6225.lambda.LogEvent::handleRequest'
+      Environment:
+        Variables:
+          DOMAIN_NAME: !Ref domainName
+      Handler: 'SendEmail::handleRequest'
       Runtime: java11
   dynamoTable:
     Type: 'AWS::DynamoDB::Table'
     Properties:
       AttributeDefinitions:
         - AttributeName: id
-          AttributeType: S
+          AttributeType: String
       KeySchema:
         - AttributeName: id
           KeyType: HASH
@@ -881,9 +873,11 @@ Resources:
     Properties:
       Action: 'lambda:*'
       FunctionName: !GetAtt 
-        - lambdafunction
+        - lambdaFunction
         - Arn
       Principal: sns.amazonaws.com
       SourceArn: !Ref snsTopic
-
- 
+  myQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: bills-due-queue
