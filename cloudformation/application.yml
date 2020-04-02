@@ -385,6 +385,10 @@ Resources:
               sudo echo port=${port} >> /etc/profile.d/envvariable.sh
             - |
               sudo echo export port >> /etc/profile.d/envvariable.sh
+            - !Sub |
+              sudo echo domainName=${domainName} >> /etc/profile.d/envvariable.sh
+            - |
+              sudo echo export domainName >> /etc/profile.d/envvariable.sh  
 ## Auto Scaling group
   WebServerGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -723,6 +727,9 @@ Resources:
         - !Ref CodeDeployEC2S3
         - !Ref AccessAttachmentToS3Bucket
         - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -797,3 +804,80 @@ Resources:
         - Key: Name
           Type: KEY_AND_VALUE
           Value: EC2-CODEDEPLOY
+########## Lambda
+  lambdaexecutionrole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: lambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSESFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSQSFullAccess'
+#####  Lambda 
+  snsTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: email_due_patients
+      Subscription:
+        - Endpoint: !GetAtt 
+            - lambdaFunction
+            - Arn
+          Protocol: lambda
+  lambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: SendEmailOnSNS
+      MemorySize: 512
+      Code: 
+        S3Bucket: !Ref deploybucket
+        S3Key: serverless-1.0-SNAPSHOT.zip
+      Role: !GetAtt 
+        - lambdaexecutionrole
+        - Arn
+      Timeout: 90
+      Environment:
+        Variables:
+          DOMAIN_NAME: !Ref domainName
+      Handler: 'SendEmail::handleRequest'
+      Runtime: java11
+  dynamoTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: String
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 10
+        WriteCapacityUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: 'TRUE'
+      TableName: csye6225
+  lambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:*'
+      FunctionName: !GetAtt 
+        - lambdaFunction
+        - Arn
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref snsTopic
+  myQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: bills-due-queue
