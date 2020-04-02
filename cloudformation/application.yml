@@ -857,7 +857,7 @@ Resources:
     Properties:
       AttributeDefinitions:
         - AttributeName: id
-          AttributeType: String
+          AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
