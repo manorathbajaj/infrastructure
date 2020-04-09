@@ -11,4 +11,4 @@ To import certificate through aws cli use :
 aws acm import-certificate --certificate file://Certificate.pem
                                  --certificate-chain file://CertificateChain.pem
                                  --private-key file://PrivateKey.pem
-</code>
+
