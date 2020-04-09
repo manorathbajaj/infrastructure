@@ -172,10 +172,6 @@ Resources:
         FromPort: 8080
         ToPort: 8080
         CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: application-security-group
@@ -498,10 +494,6 @@ Resources:
       GroupDescription: Security group for web server
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
           SourceSecurityGroupId: !GetAtt 
@@ -525,10 +517,6 @@ Resources:
       - IpProtocol: tcp
         FromPort: 8080
         ToPort: 8080
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
         CidrIp: 0.0.0.0/0
   dbsecuritygroup:
     Type: 'AWS::EC2::SecurityGroup'
