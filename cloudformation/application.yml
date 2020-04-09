@@ -61,7 +61,7 @@ Parameters:
     Default: prod.manorathbajaj.me.
   certificateARN:
     Type: String
-    Default: arn:aws:acm:us-east-1:612522715040:certificate/436890b8-5cc9-4be2-b7a6-8a769e3a9c96
+    Default: arn:aws:acm:us-east-1:612522715040:certificate/6cc3b816-b371-4c69-b89a-206b69198eeb
 # Resources block
 Resources:
   myVpc:
@@ -264,6 +264,8 @@ Resources:
       DBName: csye6225
       VPCSecurityGroups: 
         - !Ref dbsecuritygroup
+      StorageEncrypted: true
+      DBParameterGroupName: !Ref dbParam
     DependsOn: dbsubnet
   # # EC2 Instance
   # ec2Instance:
@@ -416,9 +418,16 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref ALBTargetGroup
       LoadBalancerArn: !Ref appLoadBalancer
-      Port: 80
-      Protocol: HTTP
-
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref certificateARN
+  Cert:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerCertificate'
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref certificateARN
+      ListenerArn: !Ref HttpListener
 ## Scale Policy
   WebServerScaleUpPolicy:
     Type: 'AWS::AutoScaling::ScalingPolicy'
@@ -881,3 +890,11 @@ Resources:
     Type: AWS::SQS::Queue
     Properties: 
       QueueName: bills-due-queue
+### Adding performance Schema
+  dbParam:
+    Type: AWS::RDS::DBParameterGroup
+    Properties: 
+      Description: parameter group
+      Family: MySQL5.7
+      Parameters: 
+        performance_schema : 1
